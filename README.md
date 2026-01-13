@@ -50,6 +50,12 @@ sudo rm /etc/systemd/system/sensorhub.service
 
 ---
 
+# macros obligatorios para tu printer.cfg
+
+[gcode_macro SENSORHUB_PAUSE]
+gcode:
+    PAUSE
+
 ## 🚀 Instalación (1 SOLO COMANDO)
 
 Conecta el Sensor Hub por USB y ejecuta:
