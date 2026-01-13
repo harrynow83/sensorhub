@@ -42,7 +42,7 @@ for p in "${PRINTERS[@]}"; do
 done
 
 echo ""
-read -p "👉 Selecciona el número de impresora: " SEL
+read -p "👉 Selecciona el número de impresora: " SEL < /dev/tty
 
 IDX=$((SEL-1))
 TARGET="${PRINTERS[$IDX]}"
