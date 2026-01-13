@@ -14,7 +14,7 @@ fi
 
 # 2. Detectar ESP32
 echo "🔍 Buscando Sensor Hub..."
-PORT=$(ls /dev/serial/by-id/*ESP32* 2>/dev/null | head -n 1)
+PORT=$(ls /dev/serial/by-id/*CP2102* /dev/serial/by-id/*UART* 2>/dev/null | head -n 1)
 
 if [ -z "$PORT" ]; then
   echo "❌ No se encontró el Sensor Hub."
@@ -107,3 +107,4 @@ echo "➡️ Reinicia Klipper"
 echo "➡️ Prueba quitando el filamento"
 echo "➡️ La impresora debe pausarse"
 echo "======================================"
+
