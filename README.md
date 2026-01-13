@@ -24,3 +24,36 @@ Conecta el Sensor Hub por USB y ejecuta:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/harrynow83/sensorhub/main/install_sensorhub.sh | bash
+
+luces de estado
+
+| Color       | Significado               |
+| ----------- | ------------------------- |
+| 🔵 Azul     | Arrancando                |
+| 🟢 Verde    | Todo correcto             |
+| 🟡 Amarillo | Advertencia               |
+| 🔴 Rojo     | Error (impresión pausada) |
+
+
+❓ Solución de problemas
+El sensor no pausa la impresión
+Comprueba que el servicio está activo:
+
+```bash
+sudo systemctl status sensorhub
+
+
+Debe decir:
+Active: active (running)
+
+
+Ver mensajes del sensor
+```bash
+journalctl -u sensorhub -f
+
+🔧 Desinstalar
+```bash
+sudo systemctl disable sensorhub
+sudo systemctl stop sensorhub
+rm -rf ~/sensorhub
+sudo rm /etc/systemd/system/sensorhub.service
