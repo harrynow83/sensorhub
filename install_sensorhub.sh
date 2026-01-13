@@ -3,57 +3,87 @@ set -e
 
 echo "======================================"
 echo " Sensor Hub for Klipper"
-echo " Instalador automático"
+echo " Instalador interactivo"
 echo "======================================"
 
-# No ejecutar como root
 if [ "$EUID" -eq 0 ]; then
   echo "❌ No ejecutes este script como root"
   exit 1
 fi
 
+# Detectar puerto USB del sensor
 echo "🔍 Buscando Sensor Hub..."
-
 PORT=$(ls /dev/serial/by-id/*CP2102* /dev/serial/by-id/*CH340* /dev/serial/by-id/*UART* 2>/dev/null | head -n 1)
 
 if [ -z "$PORT" ]; then
-  echo "❌ No se encontró el Sensor Hub"
-  echo "➡️ Conéctalo por USB e inténtalo de nuevo"
+  echo "❌ No se encontró el Sensor Hub por USB"
   exit 1
 fi
 
 echo "✅ Sensor Hub encontrado:"
 echo "   $PORT"
+echo ""
 
+# Detectar instancias Klipper
+echo "🔍 Detectando impresoras Klipper..."
+PRINTERS=($(ls -d ~/printer_*_data 2>/dev/null))
+
+if [ ${#PRINTERS[@]} -eq 0 ]; then
+  echo "❌ No se encontraron instancias Klipper"
+  exit 1
+fi
+
+echo ""
+echo "Impresoras detectadas:"
+i=1
+for p in "${PRINTERS[@]}"; do
+  echo " [$i] $(basename "$p")"
+  ((i++))
+done
+
+echo ""
+read -p "👉 Selecciona el número de impresora: " SEL
+
+IDX=$((SEL-1))
+TARGET="${PRINTERS[$IDX]}"
+
+if [ -z "$TARGET" ]; then
+  echo "❌ Selección inválida"
+  exit 1
+fi
+
+echo ""
+echo "✅ Instalando Sensor Hub en:"
+echo "   $(basename "$TARGET")"
+echo ""
+
+# Instalar dependencias
 echo "📦 Instalando dependencias..."
 sudo apt update
-sudo apt install -y python3-serial
+sudo apt install -y python3-serial socat
 
-mkdir -p ~/sensorhub
+# Crear carpeta sensorhub
+mkdir -p "$TARGET/sensorhub"
 
-echo "🧠 Instalando bridge..."
-cat > ~/sensorhub/sensorhub_bridge.py << EOF
+# Crear bridge Python
+echo "🧠 Creando bridge..."
+cat > "$TARGET/sensorhub/sensorhub_bridge.py" << EOF
 import serial
 import subprocess
 import time
 
 SERIAL_PORT = "$PORT"
 BAUD = 115200
+SOCKET = "$TARGET/comms/klippy.sock"
 
 def open_serial():
     while True:
         try:
-            ser = serial.Serial(
-                SERIAL_PORT,
-                BAUD,
-                timeout=1,
-                exclusive=True
-            )
+            ser = serial.Serial(SERIAL_PORT, BAUD, timeout=1, exclusive=True)
             ser.reset_input_buffer()
             print("Sensor Hub conectado")
             return ser
-        except Exception as e:
-            print("Esperando Sensor Hub...", e)
+        except Exception:
             time.sleep(2)
 
 ser = open_serial()
@@ -65,19 +95,15 @@ while True:
             continue
 
         line = line.decode(errors="ignore").strip()
-
         if not line.startswith("EVENT"):
             continue
 
-        print("SENSOR:", line)
+        subprocess.run([
+            "bash", "-c",
+            f"echo PAUSE | socat - UNIX-CONNECT:{SOCKET}"
+        ])
 
-        subprocess.run(
-            ["bash", "-c", "echo 'PAUSE' > /tmp/sensorhub_cmd"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-
-    except serial.SerialException:
+    except Exception:
         try:
             ser.close()
         except:
@@ -86,16 +112,20 @@ while True:
         ser = open_serial()
 EOF
 
-chmod +x ~/sensorhub/sensorhub_bridge.py
+chmod +x "$TARGET/sensorhub/sensorhub_bridge.py"
 
-echo "⚙️ Creando servicio systemd..."
-sudo tee /etc/systemd/system/sensorhub.service > /dev/null << EOF
+# Crear servicio systemd
+SERVICE="sensorhub_$(basename "$TARGET")"
+
+echo "⚙️ Creando servicio systemd: $SERVICE"
+
+sudo tee "/etc/systemd/system/$SERVICE.service" > /dev/null << EOF
 [Unit]
-Description=Sensor Hub Bridge
+Description=Sensor Hub for $(basename "$TARGET")
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/$USER/sensorhub/sensorhub_bridge.py
+ExecStart=/usr/bin/python3 $TARGET/sensorhub/sensorhub_bridge.py
 Restart=always
 User=$USER
 
@@ -104,31 +134,16 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable sensorhub
-sudo systemctl restart sensorhub
+sudo systemctl enable "$SERVICE"
+sudo systemctl restart "$SERVICE"
 
-CFG=~/printer.cfg
-
-if ! grep -q "SENSOR HUB" "$CFG"; then
-  echo "🧩 Añadiendo macros a printer.cfg"
-  cat >> "$CFG" << 'EOF'
-
-# ===== SENSOR HUB =====
-[gcode_shell_command SENSORHUB_CMD]
-command: bash -c "cat /tmp/sensorhub_cmd"
-timeout: 2
-verbose: False
-
-[gcode_macro SENSORHUB_PAUSE]
-gcode:
-    PAUSE
-# ======================
-EOF
-fi
-
+echo ""
 echo "======================================"
 echo "✅ INSTALACIÓN COMPLETADA"
 echo ""
-echo "➡️ Reinicia Klipper"
+echo "➡️ Impresora: $(basename "$TARGET")"
+echo "➡️ Servicio: $SERVICE"
+echo ""
+echo "➡️ Reinicia Klipper de esa impresora"
 echo "➡️ Inicia una impresión y prueba quitando el filamento"
 echo "======================================"
